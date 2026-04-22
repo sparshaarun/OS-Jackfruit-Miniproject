@@ -1,111 +1,293 @@
-# Multi-Container Runtime
+# OS Jackfruit Mini Project
 
-A lightweight Linux container runtime in C with a long-running supervisor and a kernel-space memory monitor.
+## 1. Team Information
 
-Read [`project-guide.md`](project-guide.md) for the full project specification.
+| Name                   |       SRN     |
+| ------------           |  -----------  |
+| Sparsha Arun           | PES2UG24CS513 |
+| Sri Vaishnavi Peri     | PES2UG24CS517 |
 
 ---
 
-## Getting Started
+# 2. Build, Load, and Run Instructions
 
-### 1. Fork the Repository
+## Requirements
 
-1. Go to [github.com/shivangjhalani/OS-Jackfruit](https://github.com/shivangjhalani/OS-Jackfruit)
-2. Click **Fork** (top-right)
-3. Clone your fork:
-
-```bash
-git clone https://github.com/<your-username>/OS-Jackfruit.git
-cd OS-Jackfruit
-```
-
-### 2. Set Up Your VM
-
-You need an **Ubuntu 22.04 or 24.04** VM with **Secure Boot OFF**. WSL will not work.
+* Ubuntu 22.04.05
+* GCC
+* Linux kernel headers
+* Make
 
 Install dependencies:
 
-```bash
+```bash id="9m2fa"
 sudo apt update
-sudo apt install -y build-essential linux-headers-$(uname -r)
+sudo apt install build-essential linux-headers-$(uname -r)
 ```
 
-### 3. Run the Environment Check
+---
 
-```bash
-cd boilerplate
-chmod +x environment-check.sh
-sudo ./environment-check.sh
+# Project Structure
+
+| File            | Description                                 |
+| --------------- | ------------------------------------------- |
+| engine.c        | User-space container runtime and supervisor |
+| monitor.c       | Kernel-space memory monitoring module       |
+| monitor_ioctl.h | Shared ioctl definitions                    |
+| cpu_hog.c       | CPU-bound workload                          |
+| memory_hog.c    | Memory stress workload                      |
+| io_hog.c        | I/O-bound workload                          |
+| Makefile        | Build system                                |
+
+---
+
+# Build the Project
+
+```bash id="7v1cd"
+make
 ```
 
-Fix any issues reported before moving on.
+This builds:
 
-### 4. Prepare the Root Filesystem
+* engine
+* monitor.ko
+* workload binaries
 
-```bash
-mkdir rootfs-base
-wget https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.3-x86_64.tar.gz
-tar -xzf alpine-minirootfs-3.20.3-x86_64.tar.gz -C rootfs-base
+---
 
-# Make one writable copy per container you plan to run
+# Load Kernel Module
+
+```bash id="3d0qw"
+sudo insmod monitor.ko
+```
+
+Verify device creation:
+
+```bash id="1p7xr"
+ls -l /dev/container_monitor
+```
+
+---
+
+# Start Supervisor
+
+```bash id="5t8bn"
+sudo ./engine supervisor ./rootfs-base
+```
+
+Expected output:
+
+```text id="6k3le"
+Supervisor listening on /tmp/mini_runtime.sock
+```
+
+---
+
+# Create Writable RootFS Copies
+
+Open another terminal and run:
+
+```bash id="2x9rm"
 cp -a ./rootfs-base ./rootfs-alpha
 cp -a ./rootfs-base ./rootfs-beta
 ```
 
-Do not commit `rootfs-base/` or `rootfs-*` directories to your repository.
+---
 
-### 5. Understand the Boilerplate
+# Copy Workload Programs into Containers
 
-The `boilerplate/` folder contains starter files:
+```bash id="4q6ys"
+cp cpu_hog ./rootfs-alpha/
+cp cpu_hog ./rootfs-beta/
 
-| File                   | Purpose                                             |
-| ---------------------- | --------------------------------------------------- |
-| `engine.c`             | User-space runtime and supervisor skeleton          |
-| `monitor.c`            | Kernel module skeleton                              |
-| `monitor_ioctl.h`      | Shared ioctl command definitions                    |
-| `Makefile`             | Build targets for both user-space and kernel module |
-| `cpu_hog.c`            | CPU-bound test workload                             |
-| `io_pulse.c`           | I/O-bound test workload                             |
-| `memory_hog.c`         | Memory-consuming test workload                      |
-| `environment-check.sh` | VM environment preflight check                      |
+cp memory_hog ./rootfs-alpha/
 
-Use these as your starting point. You are free to restructure the repository however you want — the submission requirements are listed in the project guide.
-
-### 6. Build and Verify
-
-```bash
-cd boilerplate
-make
+cp io_hog ./rootfs-beta/
 ```
-
-If this compiles without errors, your environment is ready.
-
-### 7. GitHub Actions Smoke Check
-
-Your fork will inherit a minimal GitHub Actions workflow from this repository.
-
-That workflow only performs CI-safe checks:
-
-- `make -C boilerplate ci`
-- user-space binary compilation (`engine`, `memory_hog`, `cpu_hog`, `io_pulse`)
-- `./boilerplate/engine` with no arguments must print usage and exit with a non-zero status
-
-The CI-safe build command is:
-
-```bash
-make -C boilerplate ci
-```
-
-This smoke check does not test kernel-module loading, supervisor runtime behavior, or container execution.
 
 ---
 
-## What to Do Next
+# Launch Containers
 
-Read [`project-guide.md`](project-guide.md) end to end. It contains:
+## Start Interactive Shell Container
 
-- The six implementation tasks (multi-container runtime, CLI, logging, kernel monitor, scheduling experiments, cleanup)
-- The engineering analysis you must write
-- The exact submission requirements, including what your `README.md` must contain (screenshots, analysis, design decisions)
+```bash id="8f5ua"
+sudo ./engine start alpha ./rootfs-alpha /bin/sh
+```
 
-Your fork's `README.md` should be replaced with your own project documentation as described in the submission package section of the project guide. (As in get rid of all the above content and replace with your README.md)
+## Start CPU Workload
+
+```bash id="7r4kt"
+sudo ./engine start alpha ./rootfs-alpha "/cpu_hog"
+```
+
+## Start Memory Workload
+
+```bash id="9y2wh"
+sudo ./engine start beta ./rootfs-beta "/memory_hog"
+```
+
+---
+
+# CLI Commands
+
+## List Running Containers
+
+```bash id="0u8pc"
+sudo ./engine ps
+```
+
+## Inspect Container Logs
+
+```bash id="5m7dx"
+sudo ./engine logs alpha
+```
+
+## Stop Container
+
+```bash id="2n1qa"
+sudo ./engine stop alpha
+```
+
+---
+
+# Memory Monitoring Demonstration
+
+The kernel module tracks container RSS memory usage using soft and hard limits.
+
+Example configuration:
+
+* Soft limit: 50 MB
+* Hard limit: 80 MB
+
+Soft limit behavior:
+
+* Kernel logs a warning message.
+
+Hard limit behavior:
+
+* Kernel sends SIGKILL to the container process.
+
+View kernel logs:
+
+```bash id="4b3ls"
+sudo dmesg | tail -20
+```
+
+Expected events:
+
+```text id="1j8ne"
+[container_monitor] SOFT LIMIT container=alpha ...
+[container_monitor] HARD LIMIT container=alpha ...
+```
+
+---
+
+# Scheduling Experiments
+
+## Run Two CPU-Bound Containers
+
+```bash id="0s9vk"
+sudo ./engine start alpha ./rootfs-alpha "/cpu_hog"
+sudo nice -n 10 ./engine start beta ./rootfs-beta "/cpu_hog"
+```
+
+## Observe Scheduling Behavior
+
+```bash id="5z1hp"
+top
+```
+
+or
+
+```bash id="8x4cm"
+ps -eo pid,ni,cmd | grep cpu_hog
+```
+
+Observation:
+
+* Lower nice value receives more CPU share.
+* Higher nice value progresses slower.
+
+---
+
+# Logging Pipeline
+
+The runtime uses:
+
+* producer-consumer threads
+* bounded-buffer logging
+* pipes for container stdout/stderr capture
+
+View generated logs:
+
+```bash id="7q2lf"
+cat alpha.log
+```
+
+---
+
+# Cleanup
+
+## Stop Containers
+
+```bash id="3r8dg"
+sudo ./engine stop alpha
+sudo ./engine stop beta
+```
+
+## Verify No Zombie Processes
+
+```bash id="4m1sn"
+ps aux | grep defunct
+```
+
+## Unload Kernel Module
+
+```bash id="2p5zt"
+sudo rmmod monitor
+```
+
+---
+
+# CI-Safe Build
+
+GitHub Actions smoke test:
+
+```bash id="6w9yb"
+make ci
+```
+
+---
+
+# Example Full Run Sequence
+
+## Terminal 1
+
+```bash id="9k2ea"
+sudo insmod monitor.ko
+sudo ./engine supervisor ./rootfs-base
+```
+
+## Terminal 2
+
+```bash id="5u7cq"
+cp -a ./rootfs-base ./rootfs-alpha
+cp -a ./rootfs-base ./rootfs-beta
+
+cp cpu_hog ./rootfs-alpha/
+cp cpu_hog ./rootfs-beta/
+cp memory_hog ./rootfs-alpha/
+
+sudo ./engine start alpha ./rootfs-alpha "/cpu_hog"
+sudo ./engine start beta ./rootfs-beta "/memory_hog"
+
+sudo ./engine ps
+sudo ./engine logs alpha
+```
+
+## Terminal 3
+
+```bash id="8v6ln"
+sudo dmesg | tail -20
+```
