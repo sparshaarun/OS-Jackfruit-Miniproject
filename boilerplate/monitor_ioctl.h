@@ -12,10 +12,10 @@
 #define MONITOR_NAME_LEN 32
 
 struct monitor_request {
-    pid_t pid;
+   int pid;
+    char container_id[MONITOR_NAME_LEN];
     unsigned long soft_limit_bytes;
     unsigned long hard_limit_bytes;
-    char container_id[MONITOR_NAME_LEN];
 };
 
 #define MONITOR_MAGIC 'M'
