@@ -285,6 +285,11 @@ sudo ./engine start beta ./rootfs-beta "/memory_hog"
 sudo ./engine ps
 sudo ./engine logs alpha
 ```
+# Demo Screenshots
+
+The complete demo screenshots and explanations are provided in the attached PDF:
+
+[Open Demo PDF](OS_MINIPROJECT.pdf)
 
 ## Terminal 3
 
