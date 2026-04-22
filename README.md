@@ -285,14 +285,108 @@ sudo ./engine start beta ./rootfs-beta "/memory_hog"
 sudo ./engine ps
 sudo ./engine logs alpha
 ```
+## Terminal 3
+
+```bash id="8v6ln"
+sudo dmesg | tail -20
+```
+
 # Demo Screenshots
 
 The complete demo screenshots and explanations are provided in the attached PDF:
 
 [Open Demo PDF](OS_MINIPROJECT.pdf)
 
-## Terminal 3
 
-```bash id="8v6ln"
-sudo dmesg | tail -20
-```
+#Engineering Analysis
+
+##Isolation Mechanisms
+
+The runtime achieves isolation using Linux namespaces and filesystem isolation techniques. PID namespaces give containers their own process tree, UTS namespaces isolate hostnames, and mount namespaces isolate filesystem views. chroot() changes the container’s root filesystem so processes cannot access host files outside the container. However, all containers still share the same host Linux kernel.
+
+##Supervisor and Process Lifecycle
+
+A long-running supervisor is useful because it manages multiple containers simultaneously and tracks their lifecycle. It creates child container processes, stores metadata such as PID and state, and handles signals like stop or kill requests. The supervisor also reaps exited child processes using waitpid() to prevent zombie processes.
+
+##IPC, Threads, and Synchronization
+
+The project uses UNIX domain sockets for CLI-to-supervisor communication and pipes for transferring container logs to the supervisor. Shared structures like the bounded log buffer can face race conditions if multiple threads access them simultaneously. Mutexes and condition variables were used to ensure safe producer-consumer synchronization and prevent corruption or deadlocks.
+
+##Memory Management and Enforcement
+
+RSS (Resident Set Size) measures the amount of physical memory currently used by a process, but it does not include swapped-out memory or total virtual memory. Soft limits generate warnings while hard limits enforce process termination to protect system stability. The enforcement logic belongs in kernel space because the kernel has direct and reliable access to process memory information and scheduling control.
+
+##Scheduling Behavior
+
+The scheduling experiments showed that Linux distributes CPU time dynamically between running workloads using the Completely Fair Scheduler (CFS). Higher-priority or lower nice-value processes received more CPU time compared to lower-priority workloads. This demonstrates Linux scheduling goals such as fairness, responsiveness, and efficient CPU utilization.
+
+
+#Design Decisions and Tradeoffs
+
+##Namespace Isolation
+
+*Design Choice:
+The runtime uses PID, UTS, and mount namespaces along with chroot() for container isolation.
+
+*Tradeoff:
+Namespaces provide lightweight isolation but do not offer the same security guarantees as full virtual machines.
+
+*Justification:
+This approach was the right choice because it provides efficient process and filesystem isolation with low overhead while still sharing the host kernel.
+
+##Supervisor Architecture
+
+*Design Choice:
+A persistent parent supervisor process was used to manage all containers.
+
+*Tradeoff:
+Keeping a supervisor alive increases complexity because it must handle metadata tracking, IPC, and process cleanup.
+
+*Justification:
+This design allows centralized control of container lifecycle management, logging, monitoring, and cleanup for multiple concurrent containers.
+
+##IPC and Logging
+
+*Design Choice:
+UNIX domain sockets were used for CLI communication and pipes with a bounded-buffer producer-consumer model were used for logging.
+
+*Tradeoff:
+The synchronization logic adds threading complexity and requires careful race-condition handling.
+
+*Justification:
+This design cleanly separates control communication from logging data flow while ensuring reliable concurrent log handling without data corruption.
+
+##Kernel Memory Monitor
+
+*Design Choice:
+Memory monitoring and limit enforcement were implemented inside a kernel module using ioctl communication.
+
+*Tradeoff:
+Kernel-space code is harder to debug and mistakes can affect system stability.
+
+*Justification:
+Kernel-space monitoring was necessary because the kernel has direct access to process memory statistics and can reliably enforce hard memory limits.
+
+##Scheduling Experiments
+
+*Design Choice:
+CPU-bound and I/O-bound workloads were executed with different priorities using Linux scheduling controls such as nice values.
+
+*Tradeoff:
+Scheduling behavior can vary depending on host system load and timing conditions.
+
+*Justification:
+This approach effectively demonstrated how the Linux Completely Fair Scheduler dynamically distributes CPU time and balances fairness and responsiveness.
+
+
+# Scheduler Experiment Results
+
+Two CPU-bound workloads were executed simultaneously in separate containers using different nice values to observe Linux scheduling behavior.
+
+| Container | Workload | Nice Value | Observed Behavior                              |
+| --------- | -------- | ---------- | ---------------------------------------------- |
+| alpha     | cpu_hog  | -5         | Received more CPU time and progressed faster   |
+| beta      | cpu_hog  | 10         | Received lower CPU share and progressed slower |
+
+The experiment showed that the Linux Completely Fair Scheduler (CFS) allocates CPU time based on process priority and fairness. The container with the lower nice value (`alpha`) received more favorable scheduling and completed work more quickly than the lower-priority container (`beta`). This demonstrates how Linux balances CPU allocation while still allowing all runnable processes to make progress concurrently.
+
